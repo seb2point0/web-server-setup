@@ -1,0 +1,16 @@
+!.gitkeep
+shared/.htpasswd
+.DS_Store
+.env
+*.key
+*.db
+*.pub
+portainer/data/config.json
+*.log
+*.0
+config.production.json
+.vscode/
+**__pycache__**
+mariadb.zip
+secrets
+nextcloud/*

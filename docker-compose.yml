@@ -1,0 +1,121 @@
+version: "3.3"
+
+services:
+
+  traefik:
+    container_name: traefik
+    hostname: traefik
+    image: traefik:v2.2
+    restart: always
+    environment:
+      - CF_API_EMAIL=${CLOUDFLARE_EMAIL}
+      - CF_API_KEY=${CLOUDFLARE_API_KEY}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+      - ${DOCKERDIR}/traefik:/etc/traefik
+      - ${DOCKERDIR}/shared:/shared
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`monitor.${DOMAINNAME}`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.http.routers.traefik.service=api@internal"
+      ## Secure dashboard with basic authentication
+      - "traefik.http.routers.traefik.middlewares=traefik-auth"
+      - "traefik.http.middlewares.traefik-auth.basicauth.usersfile=/shared/.htpasswd"
+      ## DNS CHALLENGE
+      - "traefik.http.routers.traefik.tls.certresolver=cf-cert"
+      - "traefik.http.routers.traefik.tls.domains[0].main=*.${DOMAINNAME}"
+      - "traefik.http.routers.traefik.tls.domains[0].sans=${DOMAINNAME}"
+      ## HTTP REDIRECT
+      - "traefik.http.routers.redirect-https.rule=hostregexp(`{host:.+}`)"
+      - "traefik.http.routers.redirect-https.entrypoints=web"
+      - "traefik.http.routers.redirect-https.middlewares=secured-traefik"
+      - "traefik.http.middlewares.secured-traefik.chain.middlewares=secure-redirect@file,securedheaders@file"
+    networks:
+      - traefik_proxy
+
+  # Ghost - This is the blog subdomain
+
+  ghost:
+    container_name: ghost
+    image: ghost:latest
+    restart: always
+    env_file:
+      - ${DOCKERDIR}/ghost/ghost.env
+    depends_on:
+      - mariadb
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ghost.entrypoints=websecure"
+      - "traefik.http.routers.ghost.rule=Host(`www.${DOMAINNAME}`) || Host(`${DOMAINNAME}`)"
+      - "traefik.http.routers.ghost.tls.certresolver=cf-cert"
+      - "traefik.http.routers.ghost.middlewares=securedheaders@file"
+      - "traefik.http.services.ghost.loadbalancer.server.port=2368"
+    volumes:
+      - ${DOCKERDIR}/ghost:/var/lib/ghost/content
+    networks:
+      - traefik_proxy
+
+  # PHPmyadmin - Manage the database via web UI
+
+  phpmyadmin:
+    container_name: phpmyadmin
+    image: jackgruber/phpmyadmin:latest
+    restart: always
+    depends_on:
+      - mariadb
+    environment:
+      - PMA_HOST=mariadb
+      - PMA_ABSOLUTE_URL=https://db.${DOMAINNAME}/
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.phpmyadmin.entrypoints=websecure"
+      - "traefik.http.routers.phpmyadmin.rule=Host(`db.${DOMAINNAME}`)"
+      - "traefik.http.routers.phpmyadmin.tls.certresolver=cf-cert"
+      - "traefik.http.routers.phpmyadmin.middlewares=securedheaders@file"
+      - "traefik.http.services.phpmyadmin.loadbalancer.server.port=80"
+    networks:
+      - traefik_proxy
+
+  # MariaDB - Open sourced relational database. MySQL equivalent.
+
+  mariadb:
+    container_name: mariadb
+    hostname: mariadb
+    image: linuxserver/mariadb
+    restart: always
+    depends_on:
+      - traefik
+    volumes:
+      - ${DOCKERDIR}/mariadb:/config
+      - ${DOCKERDIR}/shared:/shared
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - TZ=${TZ}
+    networks:
+      - traefik_proxy
+
+  vimflowy:
+    container_name: vimflowy
+    image: vimflowy/vimflowy
+    restart: always
+    environment:
+      - VIMFLOWY_PASSWORD=risc-toccata-beth-mexico-amnesia
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vimflowy.entrypoints=websecure"
+      - "traefik.http.routers.vimflowy.rule=Host(`v.${DOMAINNAME}`)"
+      - "traefik.http.routers.vimflowy.tls.certresolver=cf-cert"
+      - "traefik.http.routers.vimflowy.middlewares=securedheaders@file"
+      - "traefik.http.services.vimflowy.loadbalancer.server.port=3000"
+    volumes:
+      - ${DOCKERDIR}/vimflowy:/app/db
+    networks:
+      - traefik_proxy
+
+networks:
+  traefik_proxy:
+    external: true

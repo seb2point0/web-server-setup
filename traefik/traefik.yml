@@ -1,0 +1,33 @@
+api:
+  dashboard: true
+
+log:
+  level: DEBUG
+  filePath: /shared/traefik.log
+  format: json
+
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+  file:
+    directory: "/etc/traefik/conf"
+    watch: true
+
+certificatesResolvers:
+  cf-cert:
+    acme:
+      #caServer: https://acme-staging-v02.api.letsencrypt.org/directory
+      storage: /etc/traefik/acme/acme.json
+      email:
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - "1.1.1.1:53"
+          - "1.0.0.1:53"
